@@ -63,14 +63,14 @@ shared = { path = "crates/shared" }
 app = { path = "crates/app" }
 
 # Pin shared Spodeian ecosystem primitives to release tag (matching local Cargo cache).
-spodeian-parallel = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.0.0" }
-spodeian-cache = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.1.0" }
-spodeian-tokens = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.1.0" }
-spodeian-telemetry = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.1.0" }
-spodeian-export = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^2.0.0" }
-spodeian-web-utils = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.1.0" }
-spodeian-persist = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^0.1.0" }
-spodeian-leptos-ui = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^0.1.0" }
+spodeian-parallel = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.1.0", version = "^1.0.0" }
+spodeian-cache = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.1.0", version = "^1.1.0" }
+spodeian-tokens = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.1.0", version = "^1.1.0" }
+spodeian-telemetry = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.1.0", version = "^1.1.0" }
+spodeian-export = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.1.0", version = "^2.0.0" }
+spodeian-web-utils = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.1.0", version = "^1.1.0" }
+spodeian-persist = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.1.0", version = "^0.1.0" }
+spodeian-leptos-ui = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.1.0", version = "^0.1.0" }
 
 criterion = "0.5"
 proptest = "1"
