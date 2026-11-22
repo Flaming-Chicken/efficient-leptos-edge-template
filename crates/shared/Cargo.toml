@@ -1,0 +1,35 @@
+[package]
+name = "shared"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core business models, Rayon/WASM compute abstractions, WGSL shaders, and interchange export engines"
+publish = false
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+bson = { workspace = true }
+miniz_oxide = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+spodeian-parallel = { workspace = true }
+spodeian-tokens = { workspace = true }
+spodeian-export = { workspace = true }
+spodeian-persist = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["serde/std", "serde_json/std", "thiserror/std"]
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+spodeian-leptos-ui = { workspace = true }
+spodeian-persist = { workspace = true }
+
+[[bench]]
+name = "serialization_benchmarks"
+harness = false

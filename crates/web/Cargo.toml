@@ -1,0 +1,32 @@
+[package]
+name = "web"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WebAssembly hydration entrypoint and static edge asset bundle"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+leptos = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true }
+js-sys = { workspace = true }
+
+tracing = { workspace = true }
+app = { workspace = true }
+shared = { workspace = true }
+spodeian-telemetry = { workspace = true }
+
+# Edge release built exclusively by cargo-leptos for WASM hydration.
+[features]
+hydrate = ["app/hydrate", "leptos/hydrate"]
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+serde_json = { workspace = true }

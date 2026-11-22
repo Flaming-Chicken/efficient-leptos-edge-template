@@ -1,0 +1,148 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+# Shared metadata for all workspace packages
+[workspace.package]
+# Release version of the template as a whole (README, tags). Each crate inherits it via
+# `version.workspace = true`.
+version = "0.1.0"
+authors = ["Liam <spodeian@proton.me>"]
+edition = "2024"
+license = "PolyForm-Noncommercial-1.0.0"
+readme = "README.md"
+description = "Pure Serverless Edge (Static SSR + WASM Hydration / Cloudflare Pages / GitHub Pages / PWA) template built with Rust and Leptos"
+repository = "https://github.com/Spodeian/efficient-leptos-edge-template"
+
+[workspace.dependencies]
+# Leptos is lightly maintained since May 2026 and 0.9 will break APIs: pin exact versions.
+leptos = { version = "=0.8.23", default-features = false }
+leptos_router = { version = "=0.8.17", default-features = false }
+leptos_meta = { version = "=0.8.7", default-features = false }
+# Default features are required: static route generation is compiled out without them.
+leptos_axum = { version = "=0.8.10" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Element",
+    "HtmlElement",
+    "Node",
+    "NodeList",
+    "HtmlInputElement",
+    "HtmlTextAreaElement",
+    "HtmlSelectElement",
+    "Storage",
+    "Blob",
+    "BlobPropertyBag",
+    "Url",
+    "HtmlAnchorElement",
+    "HtmlDocument",
+    "Location",
+    "Navigator",
+    "Clipboard",
+    "KeyboardEvent",
+    "History",
+    "Event",
+    "EventTarget",
+] }
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+bson = "2"
+miniz_oxide = "0.8"
+base64 = "0.22"
+sha2 = "0.10"
+shared = { path = "crates/shared" }
+app = { path = "crates/app" }
+
+# Pin shared Spodeian ecosystem primitives to release tag (matching local Cargo cache).
+spodeian-parallel = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.0.0" }
+spodeian-cache = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.1.0" }
+spodeian-tokens = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.1.0" }
+spodeian-telemetry = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.1.0" }
+spodeian-export = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^2.0.0" }
+spodeian-web-utils = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^1.1.0" }
+spodeian-persist = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^0.1.0" }
+spodeian-leptos-ui = { git = "https://github.com/Spodeian/spodeian-core", tag = "v3.0.0", version = "^0.1.0" }
+
+criterion = "0.5"
+proptest = "1"
+pollster = "0.4"
+wasm-bindgen-test = "0.3"
+
+# Web release: cargo-leptos builds `web` with `hydrate` (WebAssembly) and `ssg` with
+# `ssr`; running `ssg` then writes the pre-rendered pages. See README.
+[[workspace.metadata.leptos]]
+name = "web"
+output-name = "web"
+bin-package = "ssg"
+bin-features = ["ssr"]
+bin-default-features = false
+lib-package = "web"
+lib-features = ["hydrate"]
+lib-default-features = false
+site-root = "target/site"
+site-pkg-dir = "pkg"
+style-file = "crates/web/style.scss"
+assets-dir = "crates/web/public"
+# Content-hashed bundle names, so `_headers` can cache them as immutable.
+hash-files = true
+# wasm-opt must accept every WebAssembly feature enabled in .cargo/config.toml.
+wasm-opt-features = [
+    "-Oz",
+    "--enable-simd",
+    "--enable-bulk-memory",
+    "--enable-mutable-globals",
+    "--enable-nontrapping-float-to-int",
+    "--enable-sign-ext",
+    "--enable-reference-types",
+    "--enable-multivalue",
+    "--strip-debug",
+    "--strip-producers",
+]
+env = "PROD"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+# Not `strip = true`: that removes the `target_features` section wasm-bindgen reads to
+# detect enabled WebAssembly features. wasm-opt strips names and producers instead.
+strip = "debuginfo"
+overflow-checks = false
+incremental = false
+rpath = false
+
+[profile.release.build-override]
+opt-level = 2
+codegen-units = 256
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false
+overflow-checks = false
+incremental = false
+
+[profile.dev]
+opt-level = 0
+codegen-units = 256
+debug = true
+
+[profile.dev.build-override]
+opt-level = 2
+overflow-checks = false
+
+[profile.test]
+opt-level = 2
+lto = "thin"
+debug = true

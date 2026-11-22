@@ -1,0 +1,225 @@
+//! Telemetry viewer: live event counts and recent log entries from `spodeian-telemetry`
+//! and KPI view models from `spodeian-leptos-ui`.
+
+use crate::components::modals::handle_modal_tab_trap;
+use leptos::prelude::*;
+use spodeian_leptos_ui::{KpiCardSpec, TelemetrySummary, format_relative_age_millis};
+use spodeian_telemetry::{LogEntry, TelemetryMetrics, global_ring_buffer, metrics_snapshot};
+
+/// How many of the most recent log entries the viewer lists.
+const RECENT_ENTRIES: usize = 25;
+
+#[derive(Clone)]
+struct Snapshot {
+    metrics: TelemetryMetrics,
+    summary: TelemetrySummary,
+    /// Newest first.
+    entries: Vec<LogEntry>,
+}
+
+fn take_snapshot() -> Snapshot {
+    let mut entries = global_ring_buffer().snapshot_recent(RECENT_ENTRIES);
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp_millis));
+    let metrics = metrics_snapshot();
+    let summary = TelemetrySummary::from_metrics(&metrics);
+    Snapshot {
+        metrics,
+        summary,
+        entries,
+    }
+}
+
+/// Seconds between a log entry and the snapshot, as "12s ago".
+fn format_age(entry_millis: u64, newest_millis: u64) -> String {
+    format_relative_age_millis(entry_millis, newest_millis)
+}
+
+#[component]
+fn Kpi(spec: KpiCardSpec) -> impl IntoView {
+    view! {
+        <div class="kpi-card" style=format!("border-top: 2px solid {};", spec.accent_color)>
+            <div class="kpi-label">{spec.label}</div>
+            <div class="kpi-value">{spec.value}</div>
+            <div class="kpi-note">{spec.subtext}</div>
+        </div>
+    }
+}
+
+/// Modal displaying live session telemetry KPIs and ring-buffer log entries with full keyboard
+/// focus trapping.
+#[component]
+pub fn TelemetryModal(
+    /// Controls modal visibility.
+    is_open: RwSignal<bool>,
+    /// Optional screen-reader live announcement signal.
+    #[prop(optional)]
+    announcement: Option<RwSignal<String>>,
+) -> impl IntoView {
+    let snapshot = RwSignal::new(None::<Snapshot>);
+    let close_btn_ref = NodeRef::<leptos::html::Button>::new();
+
+    // Take a fresh snapshot and focus close button each time the dialog opens.
+    Effect::new(move |_| {
+        if is_open.get() {
+            snapshot.set(Some(take_snapshot()));
+            if let Some(btn) = close_btn_ref.get() {
+                let _ = btn.focus();
+            }
+        }
+    });
+
+    let announce = move |message: &str| {
+        if let Some(announcer) = announcement {
+            announcer.set(message.to_string());
+        }
+    };
+
+    let on_dialog_keydown = move |ev: web_sys::KeyboardEvent| {
+        if ev.key() == "Escape" {
+            ev.stop_propagation();
+            is_open.set(false);
+        } else {
+            handle_modal_tab_trap(&ev, "telemetry-modal-dialog");
+        }
+    };
+
+    let copy_snapshot = move |_| {
+        let Some(current) = snapshot.get_untracked() else {
+            return;
+        };
+        let Ok(json) = serde_json::to_string_pretty(&(&current.metrics, &current.entries)) else {
+            announce("Could not prepare the telemetry snapshot");
+            return;
+        };
+        // Only confirm the copy once the browser reports that it happened.
+        leptos::task::spawn_local(async move {
+            match spodeian_web_utils::write_clipboard_text(&json).await {
+                Ok(()) => announce("Telemetry snapshot copied to clipboard"),
+                Err(_) => announce("Could not copy: the browser blocked clipboard access"),
+            }
+        });
+    };
+
+    view! {
+        <Show when=move || is_open.get()>
+            <div class="modal-backdrop" on:click=move |_| is_open.set(false) role="presentation">
+                <div
+                    id="telemetry-modal-dialog"
+                    class="modal-card modal-telemetry"
+                    on:click=|e| e.stop_propagation()
+                    on:keydown=on_dialog_keydown
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="telemetry-title"
+                    tabindex="-1"
+                >
+                    {move || {
+                        snapshot
+                            .get()
+                            .map(|snap| {
+                                let m = snap.metrics.clone();
+                                let newest = snap
+                                    .entries
+                                    .first()
+                                    .map(|e| e.timestamp_millis)
+                                    .unwrap_or(0);
+                                let (badge_class, badge_text) = if m.errors == 0 {
+                                    ("badge badge-success", "No errors logged".to_string())
+                                } else {
+                                    ("badge badge-danger", format!("{} errors logged", m.errors))
+                                };
+                                view! {
+                                    <div class="modal-header">
+                                        <h2 id="telemetry-title">"Telemetry"</h2>
+                                        <span class=badge_class>{badge_text}</span>
+                                    </div>
+
+                                    <div class="telemetry-kpis">
+                                        {snap
+                                            .summary
+                                            .cards
+                                            .into_iter()
+                                            .map(|spec| view! { <Kpi spec=spec /> })
+                                            .collect::<Vec<_>>()}
+                                    </div>
+
+                                    <h3 class="telemetry-heading">
+                                        {format!(
+                                            "Recent log entries ({} of {} buffered)",
+                                            snap.entries.len(),
+                                            m.buffered_entries,
+                                        )}
+                                    </h3>
+                                    <div class="telemetry-log">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">"When"</th>
+                                                    <th scope="col">"Level"</th>
+                                                    <th scope="col">"Source"</th>
+                                                    <th scope="col">"Message"</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {snap
+                                                    .entries
+                                                    .into_iter()
+                                                    .map(|entry| {
+                                                        view! {
+                                                            <tr>
+                                                                <td>{format_age(entry.timestamp_millis, newest)}</td>
+                                                                <td>{entry.level}</td>
+                                                                <td>{entry.target}</td>
+                                                                <td>{entry.message}</td>
+                                                            </tr>
+                                                        }
+                                                    })
+                                                    .collect::<Vec<_>>()}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            })
+                    }}
+                    <div class="modal-footer telemetry-footer">
+                        <button class="btn btn-secondary" on:click=copy_snapshot>
+                            "Copy snapshot"
+                        </button>
+                        <button
+                            class="btn btn-secondary"
+                            on:click=move |_| snapshot.set(Some(take_snapshot()))
+                        >
+                            "Refresh"
+                        </button>
+                        <button
+                            node_ref=close_btn_ref
+                            class="btn btn-primary"
+                            on:click=move |_| is_open.set(false)
+                        >
+                            "Close"
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Show>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_age;
+    use spodeian_leptos_ui::format_uptime_millis;
+
+    #[test]
+    fn uptime_is_readable_at_every_scale() {
+        assert_eq!(format_uptime_millis(999), "0s");
+        assert_eq!(format_uptime_millis(61_000), "1m 1s");
+        assert_eq!(format_uptime_millis(3_720_000), "1h 2m");
+    }
+
+    #[test]
+    fn age_never_goes_negative() {
+        assert_eq!(format_age(5_000, 17_000), "12s ago");
+        assert_eq!(format_age(9_000, 1_000), "0s ago");
+    }
+}

@@ -1,0 +1,2 @@
+# Edge routing rules for Cloudflare Pages and Netlify static deployments.
+/404.html /404.html 404

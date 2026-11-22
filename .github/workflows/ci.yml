@@ -1,0 +1,165 @@
+name: Continuous Integration & Test Suite
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+    types: [ opened, synchronize, reopened, labeled, unlabeled ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  licenses:
+    name: Dependency Licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Check dependency licenses
+        run: cargo deny --all-features check licenses
+
+  lint-and-format:
+    name: Lint & Format (Edge SSR + WASM Hydration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Check Formatting (Rustfmt)
+        run: cargo fmt --all -- --check
+      - name: Install Leptosfmt
+        uses: taiki-e/install-action@v2
+        with:
+          tool: leptosfmt
+      - name: Check Leptos Formatting (Leptosfmt)
+        run: leptosfmt --check crates
+      - name: Reject Tracked Large Binaries (> 2 MB)
+        shell: python
+        run: |
+          import os, subprocess, sys
+          limit = 2 * 1024 * 1024
+          files = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
+          oversized = []
+          for f in files:
+              if not f:
+                  continue
+              path = f.decode("utf-8", errors="replace")
+              if os.path.isfile(path) and os.path.getsize(path) > limit:
+                  oversized.append((path, os.path.getsize(path)))
+          if oversized:
+              for path, size in oversized:
+                  print(f"::error::Tracked file '{path}' exceeds 2 MB ({size} bytes).")
+              sys.exit(1)
+      - name: Clippy (static SSR, native)
+        run: cargo clippy -p shared -p app -p ssg --all-targets --features app/ssr -- -D warnings
+      - name: Clippy (hydration, wasm32)
+        run: cargo clippy -p app -p web --target wasm32-unknown-unknown --features app/hydrate,web/hydrate -- -D warnings
+      - name: Check Rustdoc & Examples / Benches
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: |
+          cargo doc --no-deps -p shared -p app --features app/ssr
+          cargo check -p shared --examples --benches
+
+  test-native:
+    name: Native SSR Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run Tests with Nextest
+        run: cargo nextest run --workspace --features app/ssr --profile ci
+
+      - name: Measure Code Coverage
+        run: |
+          cargo llvm-cov nextest --workspace --features app/ssr --lcov --output-path lcov.info
+          cargo llvm-cov report --html --output-dir target/llvm-cov/html
+
+      - name: Upload HTML Coverage Report Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/llvm-cov/html
+          retention-days: 14
+
+  test-wasm:
+    name: WASM Browser Tests (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, firefox]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-bindgen Test Runner (version from Cargo.lock)
+        run: |
+          WB_VERSION=$(cargo pkgid --quiet wasm-bindgen | sed 's/.*[@#]//')
+          cargo install wasm-bindgen-cli --version "$WB_VERSION" --locked
+
+      - name: Run WebAssembly Browser Tests
+        shell: bash
+        env:
+          WASM_BINDGEN_TEST_TIMEOUT: "60"
+        run: |
+          if [ "${{ matrix.browser }}" = "chrome" ]; then
+            export CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver"
+          else
+            export GECKODRIVER="$GECKOWEBDRIVER/geckodriver"
+          fi
+          cargo test -p web --features hydrate --tests --target wasm32-unknown-unknown
+
+  build-web:
+    name: Build Pre-rendered Static Edge Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache Build Tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-leptos
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cache/cargo-leptos
+          key: ${{ runner.os }}-web-tools-${{ hashFiles('scripts/build-web.sh', 'Cargo.lock') }}
+      - name: Build
+        run: bash scripts/build-web.sh
+      - name: Verify Zero-JS Content & Edge Discovery Artifacts
+        run: |
+          grep -q "Total Items" target/site/index.html
+          grep -q "<title>Analytics |" target/site/analytics.html
+          grep -q "<title>About |" target/site/about.html
+          grep -q "Page not found" target/site/404.html
+          grep -q "application/ld+json" target/site/index.html
+          test -s target/site/sitemap.xml
+          test -s target/site/robots.txt
+          test -s target/site/_redirects
+          ! grep -q 'nonce=' target/site/index.html

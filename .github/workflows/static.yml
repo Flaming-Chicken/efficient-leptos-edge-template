@@ -1,0 +1,67 @@
+# Deploys the pre-rendered web release (static HTML + hydration bundle) to GitHub Pages.
+# The site is built for the root path "/": use a user/organisation site or a custom domain.
+name: Deploy static content to Pages
+
+on:
+  # Runs on pushes targeting the default branch
+  push:
+    branches: ["main"]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.repository_owner == 'Spodeian'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Stable Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      # scripts/build-web.sh pins cargo-leptos (and through it Sass and wasm-opt) and
+      # installs the wasm-bindgen CLI at the version in Cargo.lock.
+      - name: Cache Build Tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-leptos
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cache/cargo-leptos
+          key: ${{ runner.os }}-web-tools-${{ hashFiles('scripts/build-web.sh', 'Cargo.lock') }}
+
+      - name: Build Pre-rendered Web Release
+        run: bash scripts/build-web.sh
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload compiled assets artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'target/site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
