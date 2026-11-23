@@ -56,8 +56,8 @@ web-sys = { version = "0.3", features = [
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
 bson = "2"
-miniz_oxide = "0.8"
-base64 = "0.22"
+miniz_oxide = "0.9"
+base64 = "0.23"
 sha2 = "0.10"
 shared = { path = "crates/shared" }
 app = { path = "crates/app" }
@@ -74,7 +74,7 @@ spodeian-leptos-ui = { git = "https://github.com/Spodeian/spodeian-core", tag = 
 
 criterion = "0.5"
 proptest = "1"
-pollster = "0.4"
+pollster = "1.0"
 wasm-bindgen-test = "0.3"
 
 # Web release: cargo-leptos builds `web` with `hydrate` (WebAssembly) and `ssg` with
